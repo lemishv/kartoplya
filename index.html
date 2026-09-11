@@ -216,10 +216,21 @@ body { padding: env(safe-area-inset-top) 0 0 0; min-height:100vh; }
 .id-chips { display:flex; flex-wrap:wrap; gap:7px; margin-top:14px; }
 .id-chip { font-size:0.82rem; font-weight:600; padding:5px 11px; border-radius:20px; border:1.5px solid; background:transparent; white-space:nowrap; color:var(--text-dim); }
 .id-chip-code { color:var(--text); font-weight:700; }
-.id-cards { display:flex; flex-direction:column; gap:8px; }
-.id-card { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:14px; }
-.id-card-code { font-size:1.05rem; font-weight:700; color:var(--text); }
-.id-card-qty { font-size:1.25rem; font-weight:800; }
+/* заголовок шеду: назва + місткість як окрема плашка */
+.title-row { display:flex; align-items:center; gap:10px; margin:8px 2px 12px; }
+.title-row .screen-title { margin:0; flex:1; min-width:0; }
+.title-row .screen-title span:not(.space-ic) { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cap-chip { flex:none; display:flex; flex-direction:column; align-items:flex-end; line-height:1.1; padding:6px 12px; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.cap-chip b { font-size:1.15rem; font-weight:800; font-variant-numeric:tabular-nums; }
+.cap-chip small { font-size:.62rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--text-faint); }
+/* заповненість: смуга + зайнято / вільно */
+.fill-box { margin:0 2px 18px; }
+.fill-legend { display:flex; justify-content:space-between; gap:12px; margin-top:9px; font-size:.86rem; color:var(--text-dim); }
+.fill-legend b { font-size:1.1rem; font-weight:800; font-variant-numeric:tabular-nums; margin-right:5px; }
+.fill-legend .occ b { color:var(--accent-hi); }
+.fill-legend .free b { color:var(--text); }
+.fill-legend .free.none b { color:var(--danger); }
+.fill-note { font-size:.82rem; color:var(--text-dim); margin:0 2px 18px; }
 
 /* ---- Buttons ---- */
 .btn {
@@ -562,7 +573,7 @@ body.light .when-row.past .when-btn { color:#9a6512; }
    DB_NAME — назва бази IndexedDB. Будь-яка сторінка на тому ж домені з тією самою назвою
    бачить ті самі дані (так і задумано для заміни робочої версії).
    Для тестової копії, яка не чіпає справжні дані, зміни на 'kartoplya-test'. */
-const APP_VERSION = '39';
+const APP_VERSION = '40';
 const DB_NAME = 'kartoplya';
 const LS = k => `kart_${k}:${DB_NAME}`;   // ключі копій/страховки прив'язані до бази
 
@@ -593,7 +604,7 @@ const I18N = {
     rows:'Рядів', stacks:'Стопок', height:'Висота', shed_saved:'Шед збережено', shed_deleted:'Шед видалено',
     delete_shed:'Видалити шед', del_shed_not_empty:'Шед не порожній — спочатку виведіть усі ящики',
     shed_empty:'Шед порожній.', shed_empty_sub:'Наповніть його кнопкою +',
-    capacity_label:'Місткість', occupied:'зайнято',
+    capacity_label:'Місткість', occupied:'зайнято', cap_unset:'місткість не задана',
     tap_for_actions:'Тап по партії — дії: перемістити, сортувати, продати.',
     row:'Ряд', stack:'Стопка',
     dig_to:'Копання', id_potato:'ID картоплі', qty_boxes:'Кількість ящиків',
@@ -681,7 +692,7 @@ const I18N = {
     rows:'Rows', stacks:'Stacks', height:'Height', shed_saved:'Shed saved', shed_deleted:'Shed deleted',
     delete_shed:'Delete shed', del_shed_not_empty:'Shed not empty — clear all boxes first',
     shed_empty:'Shed is empty.', shed_empty_sub:'Fill it with the + button',
-    capacity_label:'Capacity', occupied:'occupied',
+    capacity_label:'Capacity', occupied:'occupied', cap_unset:'capacity not set',
     tap_for_actions:'Tap a batch — actions: move, sort, sell.',
     row:'Row', stack:'Stack',
     dig_to:'Dig', id_potato:'Potato ID', qty_boxes:'Number of boxes',
@@ -1000,8 +1011,9 @@ function renderSheds(app){
     html+=`<div class="plate" onclick="openShed('${sh.id}')">
       <div class="plate-row"><div style="display:flex;align-items:center;gap:14px"><div class="chip-ic">${IC.shed}</div>
       <div class="plate-title">${esc(sh.name)}</div></div>
-      <span class="plate-big">${q}<small> / ${sh.capacity||'∞'}</small></span></div>
+      ${sh.capacity?`<span class="cap-chip"><small>${t('capacity_label')}</small><b>${sh.capacity}</b></span>`:''}</div>
       <div class="cap-bar"><div class="cap-fill ${pct>=95?'full':''}" style="width:${pct}%"></div></div>
+      <div class="fill-legend"><span class="occ"><b>${q}</b>${t('occupied')}${sh.capacity?` · ${pct}%`:''}</span>${sh.capacity?`<span class="free${sh.capacity-q>0?'':' none'}"><b>${Math.max(0,sh.capacity-q)}</b>${t('free_word')}</span>`:''}</div>
       ${unpl?`<div class="shed-unplaced">${t('no_position')}: ${unpl}</div>`:''}
       ${chips?`<div class="id-chips">${chips}</div>`:''}</div>`;
   });
@@ -1235,21 +1247,30 @@ function renderShedDetail(app){
   const sh=shedById(state.detail.id); if(!sh){go('sheds');return;}
   const q=shedQty(sh.id); const lines=[];
   state.batches.forEach(b=>{ if(b.status==='sold') return; (b.locs||[]).forEach((l,li)=>{ if(l.shedId===sh.id && (+l.qty||0)!==0) lines.push({b,l,li,id:idById(b.idRef)}); }); });
+  const cap=+sh.capacity||0, free=cap?Math.max(0,cap-q):null, pct=cap?Math.min(100,Math.round(q/cap*100)):0;
   let html=`<button class="btn ghost" style="width:auto;padding:6px 0;margin-bottom:4px" onclick="go('sheds')">← ${t('nav_sheds')}</button>
-    <h1 class="screen-title"><span class="space-ic">${SPACE_IC.sheds}</span>${esc(sh.name)}</h1><p class="screen-sub">${t('capacity_label')} ${sh.capacity||'∞'} · ${t('occupied')} ${q}</p>`;
+    <div class="title-row"><h1 class="screen-title"><span class="space-ic">${SPACE_IC.sheds}</span><span>${esc(sh.name)}</span></h1>
+      ${cap?`<span class="cap-chip"><small>${t('capacity_label')}</small><b>${cap}</b></span>`:''}</div>
+    ${cap?`<div class="fill-box"><div class="cap-bar"><div class="cap-fill ${pct>=95?'full':''}" style="width:${pct}%"></div></div>
+      <div class="fill-legend"><span class="occ"><b>${q}</b>${t('occupied')} · ${pct}%</span><span class="free${free?'':' none'}"><b>${free}</b>${t('free_word')}</span></div></div>`
+    :`<p class="fill-note">${t('occupied')} ${q} · ${t('cap_unset')}</p>`}`;
   if(!lines.length){ html+=emptyState(IC.box,t('shed_empty'),t('shed_empty_sub')); }
   else {
     // підсумок по ID (головне)
     const byId={};
     lines.forEach(({b,l,id})=>{ if(!id)return; const k=id.id;
-      if(!byId[k]){ const so=sortById(id.sortId); byId[k]={code:id.code,color:so?so.color:'skoda',qty:0}; }
-      byId[k].qty+=(+l.qty||0);
+      if(!byId[k]){ const so=sortById(id.sortId); byId[k]={id, sort:so?so.name:'', color:so?so.color:'skoda', qty:0, sizes:{}}; }
+      const q0=(+l.qty||0); byId[k].qty+=q0;
+      const sk=b.size||''; byId[k].sizes[sk]=(byId[k].sizes[sk]||0)+q0;
     });
     const cards=Object.values(byId).sort((a,b)=>b.qty-a.qty).map(c=>{
       const cp=pig(c.color);
-      return `<div class="id-card" style="border-left:4px solid ${cp.c}"><span class="id-card-code">${esc(c.code)}</span><span class="id-card-qty" style="color:${cp.b}">${c.qty}</span></div>`;
+      const parts=Object.entries(c.sizes).sort((a,b)=>b[1]-a[1]).map(([sz,q2])=>`${esc(sz||t('unsorted_short'))} ${q2}`).join(' · ');
+      return `<div class="id-tile" onclick="openId(${ja(c.id.id)})">${stickerHtml(c.id)}
+        <div class="id-tile-body"><div class="id-tile-meta">${esc(c.sort)}</div><div class="id-tile-sizes">${parts}</div></div>
+        <span class="id-tile-qty" style="color:${cp.b}">${c.qty}</span></div>`;
     }).join('');
-    if(cards) html+=`<div class="id-cards">${cards}</div>`;
+    if(cards) html+=cards;
     // без позиції — окремо для кожного ID+розміру
     const noPos={};
     lines.forEach(({b,l,id})=>{ if(!id || l.row || l.stack || (+l.qty||0)<=0) return; const k=id.id+'\u0001'+(b.size||'');
