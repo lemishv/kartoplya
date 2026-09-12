@@ -525,6 +525,9 @@ body.light .warn-txt, body.light .lg-check .bad, body.light .qty-info.over, body
 #bd-pill[hidden] { display:none; }
 .log-entered { color:var(--text-faint); font-size:.76rem; margin-top:8px; }
 body.light .when-row.past .when-btn { color:#9a6512; }
+@keyframes slide-left { from { opacity:.4; transform:translateX(26px) } to { opacity:1; transform:none } }
+@keyframes slide-right { from { opacity:.4; transform:translateX(-26px) } to { opacity:1; transform:none } }
+#app { touch-action:pan-y; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition:none !important; } }
 </style>
 </head>
@@ -573,7 +576,7 @@ body.light .when-row.past .when-btn { color:#9a6512; }
    DB_NAME — назва бази IndexedDB. Будь-яка сторінка на тому ж домені з тією самою назвою
    бачить ті самі дані (так і задумано для заміни робочої версії).
    Для тестової копії, яка не чіпає справжні дані, зміни на 'kartoplya-test'. */
-const APP_VERSION = '40';
+const APP_VERSION = '41';
 const DB_NAME = 'kartoplya';
 const LS = k => `kart_${k}:${DB_NAME}`;   // ключі копій/страховки прив'язані до бази
 
@@ -768,6 +771,7 @@ function applyTheme(){
   document.body.classList.toggle('light', THEME==='light');
   document.getElementById('theme-ic').innerHTML = THEME==='light' ? MOON : SUN;
   document.querySelector('meta[name=theme-color]').setAttribute('content', THEME==='light' ? '#f4f6f9' : '#111a26');
+  // у звичайному вікні браузера рядок стану хоч кольором збігатиметься із застосунком
 }
 function toggleTheme(){ THEME = THEME==='light'?'dark':'light'; localStorage.setItem('kart_theme',THEME); applyTheme(); render(); buzz(); }
 function applyLang(){
@@ -2452,6 +2456,46 @@ async function doSort(){
   if(!ok) return;
   state.sortCtx=null; state.takeMap=null; closeSheet(); render();
 }
+
+/* ============================================================
+   СВАЙП МІЖ ЕКРАНАМИ
+   Горизонтальний рух пальцем гортає нижні вкладки. На сторінці сорту, ID
+   чи шеду свайп зліва направо повертає назад — так само, як кнопка ↑ вгорі.
+   Жести всередині карт стопок, полів і списків, що самі прокручуються
+   вбік, не перехоплюються.
+   ============================================================ */
+const TABS=['sorts','sheds','stats','log'];
+const NO_SWIPE='.dig-grid-scroll, .shed-grid-scroll, input, select, textarea, .seg, .take-extra-row, .id-chips, .cmp';
+let _sw={on:false,x:0,y:0,t:0};
+const sheetOpen=()=>document.getElementById('sheetBg').classList.contains('open');
+function detailBack(){
+  const d=state.detail; if(!d) return false;
+  if(d.type==='id'){ const sid=d.fromSort||(idById(d.id)||{}).sortId; if(sid){ openSort(sid); return true; } }
+  go(d.type==='shed'?'sheds':'sorts'); return true;
+}
+function swipeStart(e){
+  if(e.touches.length!==1 || sheetOpen() || (e.target.closest&&e.target.closest(NO_SWIPE))){ _sw.on=false; return; }
+  const p=e.touches[0]; _sw={on:true,x:p.clientX,y:p.clientY,t:Date.now()};
+}
+function swipeEnd(e){
+  if(!_sw.on) return; _sw.on=false;
+  if(sheetOpen()) return;
+  const p=e.changedTouches[0], dx=p.clientX-_sw.x, dy=p.clientY-_sw.y, dt=Date.now()-_sw.t;
+  if(dt>700 || Math.abs(dx)<70 || Math.abs(dx)<Math.abs(dy)*1.6) return;   // це був скрол, а не гортання
+  if(state.detail){ if(dx>0 && detailBack()) buzz(8); return; }
+  const i=TABS.indexOf(state.tab), j=i+(dx<0?1:-1);
+  if(i<0 || j<0 || j>=TABS.length) return;                                  // на краях не зациклюємо
+  go(TABS[j]); slideIn(dx<0?1:-1); buzz(8);
+}
+function slideIn(dir){
+  const app=document.getElementById('app'); if(!app) return;
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  app.style.animation='none'; void app.offsetWidth;
+  app.style.animation=`slide-${dir>0?'left':'right'} .18s ease-out`;
+}
+document.addEventListener('touchstart', swipeStart, {passive:true});
+document.addEventListener('touchend', swipeEnd, {passive:true});
+document.addEventListener('touchcancel', ()=>{_sw.on=false;}, {passive:true});
 
 /* ============================================================
    ПОШУК ID: «17» знаходить «017»; також поле, клас, сорт і характеристики

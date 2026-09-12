@@ -6,7 +6,7 @@
    • VERSION піднімай, коли додаєш/перейменовуєш файли в списку CORE.
    Кеш прив'язаний до адреси розгортання, тож інші застосунки на тому ж
    GitHub Pages (і робоча версія) свого кешу не втратять. */
-const VERSION = 'kontur-40';
+const VERSION = 'kontur-41';
 const SCOPE = self.registration.scope;
 const PREFIX = 'kartoplya:';
 const CACHE = `${PREFIX}${VERSION}@${SCOPE}`;
